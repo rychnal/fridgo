@@ -1,11 +1,10 @@
 import type { Metadata } from "next";
 import { createClient } from "@/lib/supabase/server";
+import { getLocale } from "@/lib/i18n";
 import { PantryClient } from "./pantry-client";
 import type { Location, PantryItem } from "@/types";
 
-export const metadata: Metadata = {
-  title: "Zásoby",
-};
+export const metadata: Metadata = { title: "Zásoby" };
 
 export default async function PantryPage({
   searchParams,
@@ -13,20 +12,17 @@ export default async function PantryPage({
   searchParams: Promise<{ tab?: string; action?: string }>;
 }) {
   const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
+  const { data: { user } } = await supabase.auth.getUser();
   if (!user) return null;
 
-  const params = await searchParams;
+  const [params, locale] = await Promise.all([searchParams, getLocale()]);
   const activeTab = (params.tab as Location) || "fridge";
 
   const { data: items } = await supabase
     .from("pantry_items")
     .select("*")
     .eq("user_id", user.id)
-    .order("created_at", { ascending: false });
+    .order("created_at", { ascending: false }) as { data: Record<string, any>[] | null };
 
   const pantryItems: PantryItem[] = (items ?? []).map((row) => ({
     id: row.id,
@@ -47,6 +43,7 @@ export default async function PantryPage({
       initialItems={pantryItems}
       initialTab={activeTab}
       initialAction={params.action}
+      locale={locale}
     />
   );
 }

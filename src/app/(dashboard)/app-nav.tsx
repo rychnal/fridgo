@@ -2,18 +2,24 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { LayoutDashboard, Refrigerator, UtensilsCrossed, ShoppingCart, type LucideIcon } from "lucide-react";
+import { LayoutDashboard, Refrigerator, UtensilsCrossed, ShoppingCart } from "lucide-react";
 import { cn } from "@/lib/utils";
+import type { Translations } from "@/lib/i18n/translations";
 
-const navItems: { href: string; label: string; icon: LucideIcon }[] = [
-  { href: "/dashboard", label: "Přehled", icon: LayoutDashboard },
-  { href: "/pantry",    label: "Zásoby",  icon: Refrigerator },
-  { href: "/recipes",   label: "Recepty", icon: UtensilsCrossed },
-  { href: "/shopping",  label: "Nákupy",  icon: ShoppingCart },
-];
+type NavT = Translations["nav"];
 
-export function DesktopNav() {
+function useNavItems(t: NavT) {
+  return [
+    { href: "/dashboard", label: t.dashboard, icon: LayoutDashboard },
+    { href: "/pantry",    label: t.pantry,    icon: Refrigerator },
+    { href: "/recipes",   label: t.recipes,   icon: UtensilsCrossed },
+    { href: "/shopping",  label: t.shopping,  icon: ShoppingCart },
+  ];
+}
+
+export function DesktopNav({ t }: { t: NavT }) {
   const pathname = usePathname();
+  const navItems = useNavItems(t);
 
   return (
     <nav className="hidden md:flex items-center gap-0.5">
@@ -39,8 +45,9 @@ export function DesktopNav() {
   );
 }
 
-export function MobileNav() {
+export function MobileNav({ t }: { t: NavT }) {
   const pathname = usePathname();
+  const navItems = useNavItems(t);
 
   return (
     <nav className="md:hidden fixed bottom-0 inset-x-0 bg-white border-t border-border z-20 safe-bottom">
