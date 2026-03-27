@@ -1,21 +1,13 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { UtensilsCrossed, ShoppingCart, Refrigerator, LayoutDashboard } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
-import { NavLink } from "./nav-link";
+import { DesktopNav, MobileNav } from "./app-nav";
 import { UserMenu } from "./user-menu";
 
 export const metadata: Metadata = {
   title: "Přehled",
 };
-
-const navItems = [
-  { href: "/dashboard", label: "Přehled", icon: LayoutDashboard },
-  { href: "/pantry",    label: "Zásoby",   icon: Refrigerator },
-  { href: "/recipes",   label: "Recepty",  icon: UtensilsCrossed },
-  { href: "/shopping",  label: "Nákupy",   icon: ShoppingCart },
-];
 
 export default async function DashboardLayout({
   children,
@@ -41,14 +33,7 @@ export default async function DashboardLayout({
             fridgo
           </Link>
 
-          {/* Desktop nav */}
-          <nav className="hidden md:flex items-center gap-0.5">
-            {navItems.map((item) => (
-              <NavLink key={item.href} href={item.href} icon={item.icon}>
-                {item.label}
-              </NavLink>
-            ))}
-          </nav>
+          <DesktopNav />
 
           <UserMenu email={user.email ?? ""} />
         </div>
@@ -59,16 +44,7 @@ export default async function DashboardLayout({
         {children}
       </main>
 
-      {/* Mobile bottom nav */}
-      <nav className="md:hidden fixed bottom-0 inset-x-0 bg-white border-t border-border z-20 safe-bottom">
-        <div className="grid grid-cols-4 h-16">
-          {navItems.map((item) => (
-            <NavLink key={item.href} href={item.href} icon={item.icon} mobile>
-              {item.label}
-            </NavLink>
-          ))}
-        </div>
-      </nav>
+      <MobileNav />
     </div>
   );
 }
