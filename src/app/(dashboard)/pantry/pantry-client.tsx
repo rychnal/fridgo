@@ -31,11 +31,13 @@ export function PantryClient({ initialItems, initialTab, initialAction, locale }
   const [newUnit, setNewUnit] = useState("");
   const [newExpires, setNewExpires] = useState("");
 
-  const [scanFile, setScanFile] = useState<File | null>(null);
-  const [scanPreview, setScanPreview] = useState<string | null>(null);
+  const [scanFiles, setScanFiles] = useState<File[]>([]);
+  const [scanPreviews, setScanPreviews] = useState<string[]>([]);
   const [scanResults, setScanResults] = useState<DetectedIngredient[] | null>(null);
   const [scanImageUrl, setScanImageUrl] = useState<string | null>(null);
   const [selectedScanItems, setSelectedScanItems] = useState<Set<number>>(new Set());
+  const [editedNames, setEditedNames] = useState<Record<number, string>>({});
+  const [scanProgress, setScanProgress] = useState<{ done: number; total: number } | null>(null);
 
   const filteredItems = items.filter((i) => i.location === activeTab);
 
@@ -48,9 +50,9 @@ export function PantryClient({ initialItems, initialTab, initialAction, locale }
   const tabIcons: Record<Tab, string> = { fridge: "🧊", pantry: "🥫", freezer: "❄️" };
 
   function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0] ?? null;
-    setScanFile(file);
-    if (file) setScanPreview(URL.createObjectURL(file));
+    const files = Array.from(e.target.files ?? []);
+    setScanFiles(files);
+    setScanPreviews(files.map((f) => URL.createObjectURL(f)));
   }
 
   async function handleAddItem(e: React.FormEvent) {
@@ -75,23 +77,38 @@ export function PantryClient({ initialItems, initialTab, initialAction, locale }
 
   async function handleScan(e: React.FormEvent) {
     e.preventDefault();
-    if (!scanFile || activeTab === "freezer") return;
+    if (scanFiles.length === 0) return;
     setError(null);
-    const formData = new FormData();
-    formData.append("image", scanFile);
+    setScanProgress({ done: 0, total: scanFiles.length });
+
     startTransition(async () => {
-      const result = await scanImage(formData, activeTab as "fridge" | "pantry");
-      if (!result.success) { setError(result.error); return; }
-      setScanResults(result.data.ingredients);
-      setScanImageUrl(result.data.imageUrl);
-      setSelectedScanItems(new Set(result.data.ingredients.map((_, i) => i)));
+      const allIngredients: DetectedIngredient[] = [];
+      let lastImageUrl = "";
+
+      for (let idx = 0; idx < scanFiles.length; idx++) {
+        const formData = new FormData();
+        formData.append("image", scanFiles[idx]);
+        const result = await scanImage(formData, activeTab);
+        if (!result.success) { setError(result.error); setScanProgress(null); return; }
+        allIngredients.push(...result.data.ingredients);
+        lastImageUrl = result.data.imageUrl;
+        setScanProgress({ done: idx + 1, total: scanFiles.length });
+      }
+
+      setScanResults(allIngredients);
+      setScanImageUrl(lastImageUrl);
+      setSelectedScanItems(new Set(allIngredients.map((_, i) => i)));
+      setEditedNames({});
+      setScanProgress(null);
     });
   }
 
   async function handleSaveScan() {
     if (!scanResults || !scanImageUrl) return;
     setError(null);
-    const selected = scanResults.filter((_, i) => selectedScanItems.has(i));
+    const selected = scanResults
+      .filter((_, i) => selectedScanItems.has(i))
+      .map((ing, i) => ({ ...ing, name: editedNames[i] ?? ing.name }));
     if (selected.length === 0) { setError(t.selectAtLeast); return; }
     startTransition(async () => {
       const result = await saveScanResults(selected, activeTab, scanImageUrl);
@@ -118,14 +135,12 @@ export function PantryClient({ initialItems, initialTab, initialAction, locale }
           <p className="text-muted-foreground mt-1 text-sm">{t.subtitle}</p>
         </div>
         <div className="flex gap-2">
-          {activeTab !== "freezer" && (
-            <button
-              onClick={() => { setShowScanForm(true); setShowAddForm(false); }}
-              className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition text-sm font-medium"
-            >
-              📷 {t.scan}
-            </button>
-          )}
+          <button
+            onClick={() => { setShowScanForm(true); setShowAddForm(false); }}
+            className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition text-sm font-medium"
+          >
+            📷 {t.scan}
+          </button>
           <button
             onClick={() => { setShowAddForm(true); setShowScanForm(false); }}
             className="flex items-center gap-2 px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary/90 transition text-sm font-medium"
@@ -218,33 +233,64 @@ export function PantryClient({ initialItems, initialTab, initialAction, locale }
       )}
 
       {/* Scan form */}
-      {showScanForm && activeTab !== "freezer" && (
+      {showScanForm && (
         <div className="bg-white border border-border rounded-xl p-5">
           <h3 className="font-semibold text-foreground mb-4">{t.scanLabel(tabLabels[activeTab])}</h3>
           {!scanResults ? (
             <form onSubmit={handleScan} className="space-y-4">
-              <div className="border-2 border-dashed border-border rounded-xl p-6 text-center">
-                {scanPreview ? (
-                  <div className="relative w-full h-48">
-                    <Image src={scanPreview} alt="Náhled" fill className="object-contain rounded-lg" />
+              <div className="border-2 border-dashed border-border rounded-xl p-4">
+                {scanPreviews.length > 0 ? (
+                  <div className="flex gap-2 flex-wrap">
+                    {scanPreviews.map((src, i) => (
+                      <div key={i} className="relative w-24 h-24 rounded-lg overflow-hidden shrink-0 group">
+                        <Image src={src} alt={`Náhled ${i + 1}`} fill className="object-cover" />
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setScanFiles((prev) => prev.filter((_, j) => j !== i));
+                            setScanPreviews((prev) => prev.filter((_, j) => j !== i));
+                          }}
+                          className="absolute top-1 right-1 w-5 h-5 bg-black/60 hover:bg-red-500 text-white rounded-full text-xs flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                        >
+                          ✕
+                        </button>
+                      </div>
+                    ))}
                   </div>
                 ) : (
-                  <div className="text-muted-foreground">
+                  <div className="text-center text-muted-foreground py-4">
                     <p className="text-4xl mb-2">📷</p>
                     <p className="text-sm">{t.scanHint}</p>
                   </div>
                 )}
                 <input
-                  type="file" accept="image/*" capture="environment" onChange={handleFileChange}
-                  className="mt-4 text-sm text-muted-foreground file:mr-2 file:py-1.5 file:px-3 file:border-0 file:bg-secondary file:rounded-lg file:text-sm file:cursor-pointer"
+                  type="file" accept="image/*" multiple onChange={handleFileChange}
+                  className="mt-3 text-sm text-muted-foreground file:mr-2 file:py-1.5 file:px-3 file:border-0 file:bg-secondary file:rounded-lg file:text-sm file:cursor-pointer w-full"
                 />
+                {scanFiles.length > 1 && (
+                  <p className="text-xs text-muted-foreground mt-2 text-center">{scanFiles.length} obrázky vybrány</p>
+                )}
               </div>
+
+              {scanProgress && (
+                <div className="space-y-1">
+                  <div className="flex justify-between text-xs text-muted-foreground">
+                    <span>{t.scanning}</span>
+                    <span>{scanProgress.done}/{scanProgress.total}</span>
+                  </div>
+                  <div className="h-1.5 bg-secondary rounded-full overflow-hidden">
+                    <div className="h-full bg-primary transition-all duration-300"
+                      style={{ width: `${(scanProgress.done / scanProgress.total) * 100}%` }} />
+                  </div>
+                </div>
+              )}
+
               <div className="flex gap-2">
-                <button type="submit" disabled={isPending || !scanFile}
+                <button type="submit" disabled={isPending || scanFiles.length === 0}
                   className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition text-sm font-medium disabled:opacity-50">
                   {isPending ? t.scanning : t.scanButton}
                 </button>
-                <button type="button" onClick={() => { setShowScanForm(false); setScanFile(null); setScanPreview(null); }}
+                <button type="button" onClick={() => { setShowScanForm(false); setScanFiles([]); setScanPreviews([]); }}
                   className="px-4 py-2 bg-secondary text-foreground rounded-lg hover:bg-muted transition text-sm font-medium">
                   {t.cancel}
                 </button>
@@ -253,23 +299,27 @@ export function PantryClient({ initialItems, initialTab, initialAction, locale }
           ) : (
             <div className="space-y-4">
               <p className="text-sm text-muted-foreground">{t.aiDetected(scanResults.length)}</p>
-              <div className="space-y-2 max-h-64 overflow-y-auto">
+              <div className="space-y-2 max-h-72 overflow-y-auto">
                 {scanResults.map((ing, i) => (
-                  <label key={i} className="flex items-center gap-3 p-3 border border-border rounded-lg cursor-pointer hover:bg-secondary">
+                  <div key={i} className="flex items-center gap-3 p-3 border border-border rounded-lg hover:bg-secondary">
                     <input type="checkbox" checked={selectedScanItems.has(i)}
                       onChange={(e) => {
                         const next = new Set(selectedScanItems);
                         if (e.target.checked) next.add(i); else next.delete(i);
                         setSelectedScanItems(next);
                       }}
-                      className="w-4 h-4 accent-primary"
+                      className="w-4 h-4 accent-primary shrink-0"
                     />
-                    <span className="flex-1 text-sm text-foreground">
-                      <strong>{ing.name}</strong>
-                      {ing.quantity && <span className="text-muted-foreground"> — {ing.quantity} {ing.unit ?? ""}</span>}
+                    <input
+                      type="text"
+                      value={editedNames[i] ?? ing.name}
+                      onChange={(e) => setEditedNames((prev) => ({ ...prev, [i]: e.target.value }))}
+                      className="flex-1 text-sm font-medium bg-transparent border-b border-transparent hover:border-border focus:border-primary focus:outline-none px-0 py-0.5 transition-colors"
+                    />
+                    <span className="text-xs text-muted-foreground shrink-0">
+                      {t.confidence(Math.round(ing.confidence * 100))}
                     </span>
-                    <span className="text-xs text-muted-foreground">{t.confidence(Math.round(ing.confidence * 100))}</span>
-                  </label>
+                  </div>
                 ))}
               </div>
               <div className="flex gap-2">
@@ -277,7 +327,7 @@ export function PantryClient({ initialItems, initialTab, initialAction, locale }
                   className="px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary/90 transition text-sm font-medium disabled:opacity-50">
                   {isPending ? t.saving : t.addSelected(selectedScanItems.size)}
                 </button>
-                <button onClick={() => { setScanResults(null); setScanFile(null); setScanPreview(null); }}
+                <button onClick={() => { setScanResults(null); setScanFiles([]); setScanPreviews([]); }}
                   className="px-4 py-2 bg-secondary text-foreground rounded-lg hover:bg-muted transition text-sm font-medium">
                   {t.scanAgain}
                 </button>

@@ -122,7 +122,25 @@ Formát odpovědi:
 
     const generated = JSON.parse(content) as GeneratedRecipe;
 
-    return { success: true, data: generated };
+    // Override availableInPantry based on actual pantry items (AI often gets this wrong)
+    const pantryNames = items.map((i) => i.name.toLowerCase().trim());
+
+    function isAvailable(ingredientName: string): boolean {
+      const ing = ingredientName.toLowerCase().trim();
+      return pantryNames.some(
+        (p) => p.includes(ing) || ing.includes(p)
+      );
+    }
+
+    const corrected: GeneratedRecipe = {
+      ...generated,
+      ingredients: generated.ingredients.map((ing) => ({
+        ...ing,
+        availableInPantry: isAvailable(ing.name),
+      })),
+    };
+
+    return { success: true, data: corrected };
   } catch (err) {
     const message = err instanceof Error ? err.message : "Neznámá chyba";
     return { success: false, error: `Generování receptu selhalo: ${message}` };

@@ -8,7 +8,7 @@ import type { ActionResult, DetectedIngredient, Location } from "@/types";
 
 export async function scanImage(
   formData: FormData,
-  location: "fridge" | "pantry"
+  location: Location
 ): Promise<ActionResult<{ ingredients: DetectedIngredient[]; imageUrl: string }>> {
   try {
     const supabase = await createClient();
@@ -46,10 +46,13 @@ export async function scanImage(
     );
 
     const imageUrl = uploadResult.secure_url;
-    const locationLabel = location === "fridge" ? "lednici" : "spíži";
+    const locationLabel = location === "fridge" ? "lednici" : location === "pantry" ? "spíži" : "mrazáku";
+    const freezerNote = location === "freezer"
+      ? "\nPozor: jde o mrazák, potraviny mohou být v obalech nebo zmrazené — identifikuj je podle obalů, popisků nebo tvaru."
+      : "";
 
     // Send to OpenAI Vision
-    const prompt = `Analyzuj tento obrázek ${locationLabel} a identifikuj všechny viditelné potraviny a ingredience.
+    const prompt = `Analyzuj tento obrázek ${locationLabel} a identifikuj všechny viditelné potraviny a ingredience.${freezerNote}
 
 Pro každou položku uveď:
 - název (česky)
